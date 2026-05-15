@@ -142,6 +142,10 @@ func main() {
 					Value: "",
 					Usage: "Shell command to run when the negotiated sample rate changes (rate passed as $IPOD_SAMPLE_RATE)",
 				},
+				cli.BoolFlag{
+					Name:  "request-identify",
+					Usage: "Send RequestIdentify (Cmd 0x00) on startup to prompt iAP1 accessories",
+				},
 			},
 			Action: func(c *cli.Context) error {
 				initAVRCP()
@@ -173,7 +177,7 @@ func main() {
 
 				reportR, reportW := hid.NewReportReader(rw), hid.NewReportWriter(rw)
 				frameTransport := hid.NewTransport(reportR, reportW, hidReportDefs)
-				processFrames(frameTransport)
+				processFrames(frameTransport, c.Bool("request-identify"))
 				return nil
 			},
 		},
@@ -199,7 +203,7 @@ func main() {
 				tdr := trace.NewTraceDirReader(tr, trace.DirIn)
 				reportR, reportW := hid.NewReportReader(tdr), hid.NewReportWriter(ioutil.Discard)
 				frameTransport := hid.NewTransport(reportR, reportW, hidReportDefs)
-				processFrames(frameTransport)
+				processFrames(frameTransport, false)
 				return nil
 			},
 		},
@@ -279,7 +283,7 @@ func main() {
 
 				frameTransport := hid.NewTransport(reportR, dummyW, hidReportDefs)
 
-				go processFrames(frameTransport)
+				go processFrames(frameTransport, false)
 
 				for {
 					report, err := traceR.ReadReport()
@@ -345,7 +349,7 @@ func logCmd(cmd *ipod.Command, err error, msg string) {
 
 }
 
-func processFrames(frameTransport ipod.FrameReadWriter) {
+func processFrames(frameTransport ipod.FrameReadWriter, sendIdentify bool) {
 	// Reset session-scoped state so reconnections start fresh.
 	extRemoteHandler = extremote.NewExtRemoteHandler()
 
@@ -388,23 +392,30 @@ func processFrames(frameTransport ipod.FrameReadWriter) {
 		}()
 	}
 
-	sendRequestIdentify := func() {
-		log.Info("sending RequestIdentify")
-		initBuf := ipod.CmdBuffer{}
-		ipod.Send(&initBuf, &general.RequestIdentify{})
-		sendCmds(&initBuf)
-	}
-
-	// iAP1 handshake: the iPod must send RequestIdentify first to prompt the
-	// accessory (car radio) to send its Identify (Cmd 0x01). Without this the
-	// radio sits silent and the session never starts.
-	// Send immediately and then retry every 3 seconds until the radio responds,
-	// because the first send often hits the USB before enumeration is stable
-	// (usb_ep_queue -ESHUTDOWN) and the frame is silently dropped.
-	sendRequestIdentify()
-	identifyRetry := time.NewTicker(3 * time.Second)
-	defer identifyRetry.Stop()
 	handshakeDone := false
+
+	if sendIdentify {
+		sendRI := func() {
+			log.Info("sending RequestIdentify")
+			initBuf := ipod.CmdBuffer{}
+			ipod.Send(&initBuf, &general.RequestIdentify{})
+			sendCmds(&initBuf)
+		}
+		// Send immediately and retry every 3s until the radio responds.
+		// The first send often races with USB enumeration (usb_ep_queue -ESHUTDOWN)
+		// and is silently dropped; retrying ensures it reaches the radio once ready.
+		sendRI()
+		identifyRetry := time.NewTicker(3 * time.Second)
+		defer identifyRetry.Stop()
+		go func() {
+			for range identifyRetry.C {
+				if handshakeDone {
+					return
+				}
+				sendRI()
+			}
+		}()
+	}
 
 	startRead()
 
@@ -424,11 +435,6 @@ func processFrames(frameTransport ipod.FrameReadWriter) {
 
 	for {
 		select {
-		case <-identifyRetry.C:
-			if !handshakeDone {
-				sendRequestIdentify()
-			}
-
 		case <-positionTicker.C:
 			if avrcpSource != nil && extRemoteHandler.IsPlaying() {
 				_, posMs, _ := avrcpSource.PlaybackStatus()
