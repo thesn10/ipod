@@ -387,6 +387,17 @@ func processFrames(frameTransport ipod.FrameReadWriter) {
 			frameCh <- frameResult{f, err}
 		}()
 	}
+
+	// iAP1 handshake: the iPod must send RequestIdentify first to prompt the
+	// accessory (car radio) to send its Identify (Cmd 0x01). Without this the
+	// radio sits silent and the session never starts.
+	log.Info("sending RequestIdentify")
+	{
+		initBuf := ipod.CmdBuffer{}
+		ipod.Send(&initBuf, &general.RequestIdentify{})
+		sendCmds(&initBuf)
+	}
+
 	startRead()
 
 	// Subscribe to AVRCP track-change notifications so we can push them

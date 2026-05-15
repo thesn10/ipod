@@ -18,6 +18,7 @@ func init() {
 
 var Lingos struct {
 	RequestIdentify                `id:"0x00"`
+	Identify                       `id:"0x01"`
 	ACK                            `id:"0x02"`
 	ACKPending                     `id:"0x02"`
 	ACKDataDropped                 `id:"0x02"`
@@ -95,6 +96,25 @@ var Lingos struct {
 }
 
 type RequestIdentify struct{}
+
+// Identify is the old iAP1 Cmd 0x01 sent by the accessory in response to RequestIdentify.
+type Identify struct {
+	DeviceType byte
+	Lingos     []byte
+}
+
+func (i *Identify) UnmarshalBinary(data []byte) error {
+	if len(data) < 2 {
+		return errors.New("short identify packet")
+	}
+	i.DeviceType = data[0]
+	count := int(data[1])
+	if len(data) >= 2+count {
+		i.Lingos = make([]byte, count)
+		copy(i.Lingos, data[2:2+count])
+	}
+	return nil
+}
 
 type ACKStatus uint8
 

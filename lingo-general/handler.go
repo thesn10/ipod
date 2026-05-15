@@ -139,6 +139,14 @@ func HandleGeneral(req *ipod.Command, tr ipod.CommandWriter, dev DeviceGeneral) 
 		ipod.Respond(req, tr, &resp)
 	case *RequestTransportMaxPayloadSize:
 		ipod.Respond(req, tr, &ReturnTransportMaxPayloadSize{MaxPayload: dev.MaxPayload()})
+	case *Identify:
+		// old iAP1 Cmd 0x01 — accessory identified itself, ACK and continue
+		log.WithFields(logrus.Fields{
+			"device_type": fmt.Sprintf("%02x", msg.DeviceType),
+			"lingos":      fmt.Sprintf("%x", msg.Lingos),
+		}).Info("[iAP1] Identify received")
+		ipod.Respond(req, tr, ackSuccess(req))
+
 	case *IdentifyDeviceLingoes:
 		// Check authentication options
 		switch msg.Options {
