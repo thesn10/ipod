@@ -388,15 +388,23 @@ func processFrames(frameTransport ipod.FrameReadWriter) {
 		}()
 	}
 
-	// iAP1 handshake: the iPod must send RequestIdentify first to prompt the
-	// accessory (car radio) to send its Identify (Cmd 0x01). Without this the
-	// radio sits silent and the session never starts.
-	log.Info("sending RequestIdentify")
-	{
+	sendRequestIdentify := func() {
+		log.Info("sending RequestIdentify")
 		initBuf := ipod.CmdBuffer{}
 		ipod.Send(&initBuf, &general.RequestIdentify{})
 		sendCmds(&initBuf)
 	}
+
+	// iAP1 handshake: the iPod must send RequestIdentify first to prompt the
+	// accessory (car radio) to send its Identify (Cmd 0x01). Without this the
+	// radio sits silent and the session never starts.
+	// Send immediately and then retry every 3 seconds until the radio responds,
+	// because the first send often hits the USB before enumeration is stable
+	// (usb_ep_queue -ESHUTDOWN) and the frame is silently dropped.
+	sendRequestIdentify()
+	identifyRetry := time.NewTicker(3 * time.Second)
+	defer identifyRetry.Stop()
+	handshakeDone := false
 
 	startRead()
 
@@ -416,6 +424,11 @@ func processFrames(frameTransport ipod.FrameReadWriter) {
 
 	for {
 		select {
+		case <-identifyRetry.C:
+			if !handshakeDone {
+				sendRequestIdentify()
+			}
+
 		case <-positionTicker.C:
 			if avrcpSource != nil && extRemoteHandler.IsPlaying() {
 				_, posMs, _ := avrcpSource.PlaybackStatus()
@@ -455,6 +468,10 @@ func processFrames(frameTransport ipod.FrameReadWriter) {
 			if fr.err == io.EOF {
 				log.Warnf("EOF")
 				return
+			}
+			if !handshakeDone {
+				log.Info("radio responded — stopping RequestIdentify retries")
+				handshakeDone = true
 			}
 			logFrame(fr.data, fr.err, "<< FRAME")
 			startRead() // queue next read immediately
