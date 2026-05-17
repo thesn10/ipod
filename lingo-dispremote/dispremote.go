@@ -424,12 +424,21 @@ func (s *RetArtworkFormats) UnmarshalBinary(data []byte) error {
 }
 
 type GetTrackArtworkData struct {
-	TrackIndex uint32
+	TrackIndex int32
 	FormatID   uint16
 	TimeOffset uint32
 }
 type RetTrackArtworkData struct {
-	//todo
+	PacketIndex  uint16
+	PixelFormat  byte
+	ImageWidth   uint16
+	ImageHeight  uint16
+	TopLeftX     uint16
+	TopLeftY     uint16
+	BottomRightX uint16
+	BottomRightY uint16
+	RowSize      uint32
+	Data         []byte
 }
 type GetPowerBatteryState struct {
 }
@@ -462,4 +471,20 @@ func (s RetTrackArtworkTimes) MarshalBinary() ([]byte, error) {
 		binary.Write(&buf, binary.BigEndian, t)
 	}
 	return buf.Bytes(), nil
+}
+
+func (s *RetTrackArtworkTimes) UnmarshalBinary(data []byte) error {
+	r := bytes.NewReader(data)
+	for {
+		var t uint32
+		err := binary.Read(r, binary.BigEndian, &t)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		s.TimeOffset = append(s.TimeOffset, t)
+	}
+	return nil
 }
