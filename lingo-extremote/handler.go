@@ -227,7 +227,7 @@ func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev 
 			AlbumName: ipod.StringToBytes(ipod.TruncateRunes(album, 20)),
 		})
 	case *SetPlayStatusChangeNotification:
-		h.setSubscribed(msg.EventMask != 0)
+		h.setNotifyMask(msg.EventMask)
 		ipod.Respond(req, tr, ackSuccess(req))
 		// Report the actual current play state. Reporting always-Paused here
 		// caused cars that periodically re-send SetPlayStatusChangeNotification
@@ -235,7 +235,12 @@ func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev 
 		// because they saw "Paused" and tried to start playback again.
 		h.SendPlayStatus(tr, dev != nil && dev.IsPlaying())
 	case *SetPlayStatusChangeNotificationShort:
-		h.setSubscribed(msg.Enabled)
+		// One-byte form: 0x01 enables basic types 0x00–0x05; 0x00 disables all.
+		if msg.Enabled {
+			h.setNotifyMask(notifyMaskOneByteEnable)
+		} else {
+			h.setNotifyMask(0)
+		}
 		ipod.Respond(req, tr, ackSuccess(req))
 		h.SendPlayStatus(tr, dev != nil && dev.IsPlaying())
 	case *PlayCurrentSelection:
@@ -297,14 +302,7 @@ func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev 
 		// Confirm the intended state immediately. AVRCP state lags by one poll
 		// cycle after MediaControl, so we use newPlaying (our intent) rather
 		// than re-reading dev.IsPlaying() here.
-		responseState := PlayerStatePaused
-		if newPlaying {
-			responseState = PlayerStatePlaying
-		}
-		ipod.Send(tr, &PlayStatusChangeNotification{
-			EventID:     0x00,
-			PlayerState: byte(responseState),
-		})
+		h.SendPlayStatus(tr, newPlaying)
 	case *GetTrackArtworkTimes:
 		ipod.Respond(req, tr, &RetTrackArtworkTimes{})
 	case *GetShuffle:
