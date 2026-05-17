@@ -12,12 +12,12 @@ func init() {
 }
 
 var Lingos struct {
-	AccAck                  `id:"0x00"`
-	iPodAck                 `id:"0x01"`
-	GetAccSampleRateCaps    `id:"0x02"`
-	RetAccSampleRateCaps    `id:"0x03"`
-	TrackNewAudioAttributes `id:"0x04"`
-	SetVideoDelay           `id:"0x05"`
+	AccAck               `id:"0x00"`
+	iPodAck              `id:"0x01"`
+	GetAccSampleRateCaps `id:"0x02"`
+	RetAccSampleRateCaps `id:"0x03"`
+	NewiPodTrackInfo     `id:"0x04"`
+	SetVideoDelay        `id:"0x05"`
 }
 
 type ACKStatus uint8
@@ -51,10 +51,10 @@ func (s *RetAccSampleRateCaps) MarshalBinary() ([]byte, error) {
 	return buf.Bytes(), err
 }
 
-// TrackNewAudioAttributes is sent by the accessory (us) to the car to open or
+// NewiPodTrackInfo is sent by the accessory (us) to the car to open or
 // re-open the USB audio stream. Per iAP spec it must be sent once when starting
 // a new track, and re-sent only if the sample rate changes.
-type TrackNewAudioAttributes struct {
+type NewiPodTrackInfo struct {
 	// SampleRate is the PCM sample rate in Hz (e.g. 44100).
 	SampleRate uint32
 	// SoundCheck is the iTunesSound Check gain adjustment in dB, rounded to the

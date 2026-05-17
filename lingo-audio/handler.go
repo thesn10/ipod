@@ -40,7 +40,7 @@ func Start(tr ipod.CommandWriter) {
 // ReopenAudio re-sends TrackNewAudioAttributes using the last negotiated rate.
 // Call this after PlayCurrentSelection so the car reopens its audio interface.
 func ReopenAudio(tr ipod.CommandWriter) {
-	ipod.Send(tr, &TrackNewAudioAttributes{
+	ipod.Send(tr, &NewiPodTrackInfo{
 		SampleRate: negotiatedRate,
 	})
 }
@@ -57,11 +57,11 @@ func HandleAudio(req *ipod.Command, tr ipod.CommandWriter, dev DeviceAudio) erro
 			CmdID:  0x03, // RetAccSampleRateCaps command ID
 		})
 		// Inform the car which rate we will stream at.
-		ipod.Send(tr, &TrackNewAudioAttributes{
+		ipod.Send(tr, &NewiPodTrackInfo{
 			SampleRate: 44100,
 		})
 
-	case *TrackNewAudioAttributes:
+	case *NewiPodTrackInfo:
 		// Car sends audio attributes and is ready for audio
 		// Acknowledge with AccAck
 		ipod.Respond(req, tr, &AccAck{

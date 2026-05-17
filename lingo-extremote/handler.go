@@ -252,7 +252,7 @@ func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev 
 			dev.MediaControl("Play")
 		}
 		ipod.Respond(req, tr, ackSuccess(req))
-		// Per iAP spec, the accessory must send TrackNewAudioAttributes on every
+		// Per iAP spec, the accessory must send NewiPodTrackInfo on every
 		// PlayCurrentSelection to open/reopen the USB audio stream. However,
 		// the car's stream-reopen cycle itself causes another PlayCurrentSelection
 		// to arrive ~500ms later, creating a feedback loop if we resend
@@ -261,7 +261,7 @@ func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev 
 		if time.Since(h.lastAudioAttrSent) >= audioAttrDebounce {
 			h.lastAudioAttrSent = time.Now()
 			h.audioEstablished = true
-			ipod.Send(tr, &audio.TrackNewAudioAttributes{SampleRate: audio.NegotiatedRate()})
+			ipod.Send(tr, &audio.NewiPodTrackInfo{SampleRate: audio.NegotiatedRate()})
 		}
 	case *PlayControl:
 		// Read current AVRCP state before issuing any command so Toggle can
@@ -279,13 +279,13 @@ func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev 
 				newPlaying = true
 				avrcpCmd = "Play"
 				h.lastAudioAttrSent = time.Now()
-				ipod.Send(tr, &audio.TrackNewAudioAttributes{SampleRate: audio.NegotiatedRate()})
+				ipod.Send(tr, &audio.NewiPodTrackInfo{SampleRate: audio.NegotiatedRate()})
 			}
 		case PlayControlPlay:
 			newPlaying = true
 			avrcpCmd = "Play"
 			h.lastAudioAttrSent = time.Now()
-			ipod.Send(tr, &audio.TrackNewAudioAttributes{SampleRate: audio.NegotiatedRate()})
+			ipod.Send(tr, &audio.NewiPodTrackInfo{SampleRate: audio.NegotiatedRate()})
 		case PlayControlPause:
 			newPlaying = false
 			avrcpCmd = "Pause"
