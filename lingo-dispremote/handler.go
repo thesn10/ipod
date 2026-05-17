@@ -22,11 +22,22 @@ type DeviceDispRemote interface {
 	TrackAlbum() string
 }
 
+// DispRemoteHandler manages session-scoped state for lingo 0x03 (Display Remote).
+// A new instance must be created for each USB session so that state resets
+// correctly on reconnect.
+type DispRemoteHandler struct {
+	dispNotifyState
+}
+
+func NewDispRemoteHandler() *DispRemoteHandler {
+	return &DispRemoteHandler{}
+}
+
 func ackSuccess(req *ipod.Command) *ACK {
 	return &ACK{Status: ACKStatusSuccess, CmdID: uint8(req.ID.CmdID())}
 }
 
-func HandleDispRemote(req *ipod.Command, tr ipod.CommandWriter, dev DeviceDispRemote) error {
+func (h *DispRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev DeviceDispRemote) error {
 	switch msg := req.Payload.(type) {
 
 	case *GetCurrentEQProfileIndex:
@@ -46,11 +57,12 @@ func HandleDispRemote(req *ipod.Command, tr ipod.CommandWriter, dev DeviceDispRe
 			EQProfileName: ipod.StringToBytes("Default"),
 		})
 	case *SetRemoteEventNotification:
+		h.setEventMask(msg.EventMask)
 		ipod.Respond(req, tr, ackSuccess(req))
 
 	case *GetRemoteEventStatus:
 		ipod.Respond(req, tr, &RetRemoteEventStatus{
-			EventStatus: 0,
+			EventStatus: h.EventMask(),
 		})
 
 	case *GetiPodStateInfo:

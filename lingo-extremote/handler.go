@@ -53,6 +53,7 @@ type ExtRemoteHandler struct {
 	// audioAttrDebounce. Enable with --audio-attr-debounce for head units that
 	// re-send PlayCurrentSelection when the audio stream is reopened.
 	debounceAudioAttr bool
+	extNotifyState
 }
 
 // NewExtRemoteHandler returns a handler with audioEstablished=true.
@@ -226,29 +227,17 @@ func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev 
 			AlbumName: ipod.StringToBytes(ipod.TruncateRunes(album, 20)),
 		})
 	case *SetPlayStatusChangeNotification:
+		h.setSubscribed(msg.EventMask != 0)
 		ipod.Respond(req, tr, ackSuccess(req))
 		// Report the actual current play state. Reporting always-Paused here
 		// caused cars that periodically re-send SetPlayStatusChangeNotification
 		// (session renewal) to issue a spurious PlayControl(Toggle) every time,
 		// because they saw "Paused" and tried to start playback again.
-		notifState := PlayerStatePaused
-		if dev != nil && dev.IsPlaying() {
-			notifState = PlayerStatePlaying
-		}
-		ipod.Send(tr, &PlayStatusChangeNotification{
-			EventID:     0x00,
-			PlayerState: byte(notifState),
-		})
+		h.SendPlayStatus(tr, dev != nil && dev.IsPlaying())
 	case *SetPlayStatusChangeNotificationShort:
+		h.setSubscribed(msg.Enabled)
 		ipod.Respond(req, tr, ackSuccess(req))
-		notifState := PlayerStatePaused
-		if dev != nil && dev.IsPlaying() {
-			notifState = PlayerStatePlaying
-		}
-		ipod.Send(tr, &PlayStatusChangeNotification{
-			EventID:     0x00,
-			PlayerState: byte(notifState),
-		})
+		h.SendPlayStatus(tr, dev != nil && dev.IsPlaying())
 	case *PlayCurrentSelection:
 		if dev != nil {
 			dev.MediaControl("Play")

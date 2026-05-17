@@ -356,6 +356,7 @@ func logCmd(cmd *ipod.Command, err error, msg string) {
 func processFrames(frameTransport ipod.FrameReadWriter, sendIdentify bool, debounceAudioAttr bool) {
 	// Reset session-scoped state so reconnections start fresh.
 	extRemoteHandler = extremote.NewExtRemoteHandler(debounceAudioAttr)
+	dispRemoteHandler = dispremote.NewDispRemoteHandler()
 
 	serde := ipod.CommandSerde{}
 
@@ -444,10 +445,8 @@ func processFrames(frameTransport ipod.FrameReadWriter, sendIdentify bool, debou
 				_, posMs, playing := avrcpSource.PlaybackStatus()
 				if playing {
 					outCmdBuf := ipod.CmdBuffer{}
-					ipod.Send(&outCmdBuf, &extremote.PlayStatusChangeNotificationPosition{
-						EventID:    0x04,
-						PositionMs: posMs,
-					})
+					extRemoteHandler.SendTrackPositionMs(&outCmdBuf, posMs)
+					dispRemoteHandler.SendTrackPositionSec(&outCmdBuf, posMs)
 					sendCmds(&outCmdBuf)
 				}
 			}
@@ -462,24 +461,16 @@ func processFrames(frameTransport ipod.FrameReadWriter, sendIdentify bool, debou
 			if avrcpSource.TrackChanged() {
 				extRemoteHandler.OnTrackChanged()
 				outCmdBuf := ipod.CmdBuffer{}
-				ipod.Send(&outCmdBuf, &extremote.PlayStatusChangeNotificationTrackIndex{
-					EventID:    0x01,
-					TrackIndex: 0,
-				})
+				extRemoteHandler.SendTrackIndex(&outCmdBuf, 0)
+				dispRemoteHandler.SendTrackIndex(&outCmdBuf, 0)
 				sendCmds(&outCmdBuf)
 			}
 			// Push play state changes so the radio reflects phone-side
 			// pause/resume immediately (2-way sync).
 			if changed, playing := avrcpSource.PlayStateChanged(); changed {
-				state := extremote.PlayerStatePaused
-				if playing {
-					state = extremote.PlayerStatePlaying
-				}
 				outCmdBuf := ipod.CmdBuffer{}
-				ipod.Send(&outCmdBuf, &extremote.PlayStatusChangeNotification{
-					EventID:     0x00,
-					PlayerState: byte(state),
-				})
+				extRemoteHandler.SendPlayStatus(&outCmdBuf, playing)
+				dispRemoteHandler.SendPlayStatus(&outCmdBuf, playing)
 				sendCmds(&outCmdBuf)
 			}
 
@@ -615,9 +606,10 @@ func (a *audioDevice) SupportedSampleRates() []uint32 {
 var devAudio = &audioDevice{}
 var avrcpSource *avrcp.Source
 
-// extRemoteHandler is reset for every new USB session in processFrames so that
-// the playing-state flag starts as false (paused) on each reconnect.
+// extRemoteHandler and dispRemoteHandler are reset for every new USB session in
+// processFrames so that state starts fresh on each reconnect.
 var extRemoteHandler = extremote.NewExtRemoteHandler(false)
+var dispRemoteHandler = dispremote.NewDispRemoteHandler()
 
 func initAVRCP() {
 	src, err := avrcp.NewSource()
@@ -643,7 +635,7 @@ func handlePacket(cmdWriter ipod.CommandWriter, cmd *ipod.Command) {
 		if avrcpSource != nil {
 			dispDev = avrcpSource
 		}
-		dispremote.HandleDispRemote(cmd, cmdWriter, dispDev)
+		dispRemoteHandler.Handle(cmd, cmdWriter, dispDev)
 	case ipod.LingoExtRemoteID:
 		var extDev extremote.DeviceExtRemote
 		if avrcpSource != nil {
