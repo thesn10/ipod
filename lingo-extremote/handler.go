@@ -28,7 +28,7 @@ func ackSuccess(req *ipod.Command) *ACK {
 }
 
 // audioAttrDebounce is the minimum interval between consecutive
-// TrackNewAudioAttributes sends. The car's stream-reopen cycle takes ~500ms
+// NewiPodTrackInfo sends. The car's stream-reopen cycle takes ~500ms
 // and causes it to send another PlayCurrentSelection; without debouncing this
 // creates a tight feedback loop.
 const audioAttrDebounce = 5 * time.Second
@@ -37,27 +37,29 @@ const audioAttrDebounce = 5 * time.Second
 // A new instance must be created for each USB session so that state resets
 // correctly on reconnect.
 type ExtRemoteHandler struct {
-	// audioEstablished is true once TrackNewAudioAttributes has been sent at
+	// audioEstablished is true once NewiPodTrackInfo has been sent at
 	// least once this session. Starts true so the IDPS send (from the audio
 	// lingo) counts — suppressing spurious TrackIndex pushes from notifyCh
 	// during start-up before the first PlayCurrentSelection.
 	audioEstablished bool
-	// lastAudioAttrSent is the time we last sent TrackNewAudioAttributes.
-	// Per spec, TrackNewAudioAttributes must be sent on every PlayCurrentSelection
+	// lastAudioAttrSent is the time we last sent NewiPodTrackInfo.
+	// Per spec, NewiPodTrackInfo must be sent on every PlayCurrentSelection
 	// to (re)open the USB audio stream. However the car's stream-reopen cycle
 	// itself triggers another PlayCurrentSelection, so we debounce resends
 	// within audioAttrDebounce to break the feedback loop.
 	// Zero value means "never sent" — PlayCurrentSelection will always fire it.
 	lastAudioAttrSent time.Time
+	// debounceAudioAttr suppresses duplicate NewiPodTrackInfo sends within
+	// audioAttrDebounce. Enable with --audio-attr-debounce for head units that
+	// re-send PlayCurrentSelection when the audio stream is reopened.
+	debounceAudioAttr bool
 }
 
 // NewExtRemoteHandler returns a handler with audioEstablished=true.
-// The audio lingo always sends TrackNewAudioAttributes during IDPS before any
-// ExtRemote commands arrive, so the stream is already open. lastAudioAttrSent
-// starts zero so the first PlayCurrentSelection always sends
-// TrackNewAudioAttributes (bypassing the debounce).
-func NewExtRemoteHandler() *ExtRemoteHandler {
-	return &ExtRemoteHandler{audioEstablished: true}
+// If debounce is true, duplicate NewiPodTrackInfo sends within audioAttrDebounce
+// are suppressed (for head units that loop on PlayCurrentSelection).
+func NewExtRemoteHandler(debounce bool) *ExtRemoteHandler {
+	return &ExtRemoteHandler{audioEstablished: true, debounceAudioAttr: debounce}
 }
 
 // AudioEstablished reports whether the USB audio stream has been opened at
@@ -74,7 +76,7 @@ func (h *ExtRemoteHandler) OnTrackChanged() {
 // HandleExtRemote is kept for callers that don't need session state.
 // Prefer ExtRemoteHandler.Handle for new code.
 func HandleExtRemote(req *ipod.Command, tr ipod.CommandWriter, dev DeviceExtRemote) error {
-	return (&ExtRemoteHandler{audioEstablished: true}).Handle(req, tr, dev)
+	return (&ExtRemoteHandler{audioEstablished: true, debounceAudioAttr: false}).Handle(req, tr, dev)
 }
 
 func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev DeviceExtRemote) error {
@@ -252,13 +254,7 @@ func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev 
 			dev.MediaControl("Play")
 		}
 		ipod.Respond(req, tr, ackSuccess(req))
-		// Per iAP spec, the accessory must send NewiPodTrackInfo on every
-		// PlayCurrentSelection to open/reopen the USB audio stream. However,
-		// the car's stream-reopen cycle itself causes another PlayCurrentSelection
-		// to arrive ~500ms later, creating a feedback loop if we resend
-		// immediately. Debounce: skip the resend if we sent one within the last
-		// audioAttrDebounce window.
-		if time.Since(h.lastAudioAttrSent) >= audioAttrDebounce {
+		if !h.debounceAudioAttr || time.Since(h.lastAudioAttrSent) >= audioAttrDebounce {
 			h.lastAudioAttrSent = time.Now()
 			h.audioEstablished = true
 			ipod.Send(tr, &audio.NewiPodTrackInfo{SampleRate: audio.NegotiatedRate()})

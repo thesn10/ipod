@@ -146,6 +146,10 @@ func main() {
 					Name:  "request-identify",
 					Usage: "Send RequestIdentify (Cmd 0x00) on startup to prompt iAP1 accessories",
 				},
+				cli.BoolFlag{
+					Name:  "audio-attr-debounce",
+					Usage: "Suppress duplicate NewiPodTrackInfo within 5s of PlayCurrentSelection (for head units that loop on stream reopen)",
+				},
 			},
 			Action: func(c *cli.Context) error {
 				initAVRCP()
@@ -177,7 +181,7 @@ func main() {
 
 				reportR, reportW := hid.NewReportReader(rw), hid.NewReportWriter(rw)
 				frameTransport := hid.NewTransport(reportR, reportW, hidReportDefs)
-				processFrames(frameTransport, c.Bool("request-identify"))
+				processFrames(frameTransport, c.Bool("request-identify"), c.Bool("audio-attr-debounce"))
 				return nil
 			},
 		},
@@ -203,7 +207,7 @@ func main() {
 				tdr := trace.NewTraceDirReader(tr, trace.DirIn)
 				reportR, reportW := hid.NewReportReader(tdr), hid.NewReportWriter(ioutil.Discard)
 				frameTransport := hid.NewTransport(reportR, reportW, hidReportDefs)
-				processFrames(frameTransport, false)
+				processFrames(frameTransport, false, false)
 				return nil
 			},
 		},
@@ -283,7 +287,7 @@ func main() {
 
 				frameTransport := hid.NewTransport(reportR, dummyW, hidReportDefs)
 
-				go processFrames(frameTransport, false)
+				go processFrames(frameTransport, false, false)
 
 				for {
 					report, err := traceR.ReadReport()
@@ -349,9 +353,9 @@ func logCmd(cmd *ipod.Command, err error, msg string) {
 
 }
 
-func processFrames(frameTransport ipod.FrameReadWriter, sendIdentify bool) {
+func processFrames(frameTransport ipod.FrameReadWriter, sendIdentify bool, debounceAudioAttr bool) {
 	// Reset session-scoped state so reconnections start fresh.
-	extRemoteHandler = extremote.NewExtRemoteHandler()
+	extRemoteHandler = extremote.NewExtRemoteHandler(debounceAudioAttr)
 
 	serde := ipod.CommandSerde{}
 
@@ -613,7 +617,7 @@ var avrcpSource *avrcp.Source
 
 // extRemoteHandler is reset for every new USB session in processFrames so that
 // the playing-state flag starts as false (paused) on each reconnect.
-var extRemoteHandler = extremote.NewExtRemoteHandler()
+var extRemoteHandler = extremote.NewExtRemoteHandler(false)
 
 func initAVRCP() {
 	src, err := avrcp.NewSource()
