@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"io"
 
 	"github.com/oandrew/ipod"
 )
@@ -93,6 +94,7 @@ func (r *RemoteEventNotification) MarshalBinary() ([]byte, error) {
 	buf.Write(r.EventData)
 	return buf.Bytes(), nil
 }
+
 type GetRemoteEventStatus struct {
 }
 type RetRemoteEventStatus struct {
@@ -395,6 +397,32 @@ type ArtworkFormat struct {
 type RetArtworkFormats struct {
 	Formats []ArtworkFormat
 }
+
+func (s RetArtworkFormats) MarshalBinary() ([]byte, error) {
+	buf := bytes.Buffer{}
+	for i := range s.Formats {
+		binary.Write(&buf, binary.BigEndian, s.Formats[i])
+	}
+	return buf.Bytes(), nil
+}
+
+func (s *RetArtworkFormats) UnmarshalBinary(data []byte) error {
+	r := bytes.NewReader(data)
+
+	for {
+		var f ArtworkFormat
+		err := binary.Read(r, binary.BigEndian, &f)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		s.Formats = append(s.Formats, f)
+	}
+	return nil
+}
+
 type GetTrackArtworkData struct {
 	TrackIndex uint32
 	FormatID   uint16
@@ -426,4 +454,12 @@ type GetTrackArtworkTimes struct {
 }
 type RetTrackArtworkTimes struct {
 	TimeOffset []uint32
+}
+
+func (s RetTrackArtworkTimes) MarshalBinary() ([]byte, error) {
+	buf := bytes.Buffer{}
+	for _, t := range s.TimeOffset {
+		binary.Write(&buf, binary.BigEndian, t)
+	}
+	return buf.Bytes(), nil
 }
