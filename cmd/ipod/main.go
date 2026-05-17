@@ -88,6 +88,10 @@ func main() {
 			Usage: "verbose logging",
 		},
 		cli.BoolFlag{
+			Name:  "trace",
+			Usage: "very verbose logging",
+		},
+		cli.BoolFlag{
 			Name:  "legacy, l",
 			Usage: "use legacy hid descriptor",
 		},
@@ -106,7 +110,9 @@ func main() {
 	}
 
 	app.Before = func(c *cli.Context) error {
-		if c.GlobalBool("debug") {
+		if c.GlobalBool("trace") {
+			log.SetLevel(logrus.DebugLevel)
+		} else if c.GlobalBool("debug") {
 			log.SetLevel(logrus.DebugLevel)
 		}
 
@@ -320,7 +326,7 @@ func logFrame(frame []byte, err error, msg string) {
 		le.WithError(err).Errorf(msg)
 		return
 	}
-	le.Infof(msg)
+	le.Tracef(msg)
 	if log.Level == logrus.DebugLevel {
 		spew.Fdump(log.Out, frame)
 	}
@@ -334,7 +340,7 @@ func logPacket(pkt []byte, err error, msg string) {
 		le.WithError(err).Errorf(msg)
 		return
 	}
-	le.Infof(msg)
+	le.Tracef(msg)
 	if log.Level == logrus.DebugLevel {
 		spew.Fdump(log.Out, pkt)
 	}
@@ -346,7 +352,7 @@ func logCmd(cmd *ipod.Command, err error, msg string) {
 		le.WithError(err).Errorf(msg)
 		return
 	}
-	le.Infof(msg)
+	le.Debugf(msg)
 	if log.Level == logrus.DebugLevel {
 		spew.Fdump(log.Out, cmd)
 	}
