@@ -164,7 +164,24 @@ func (s *Source) TrackLengthMs() uint32 {
 // MediaControl calls a BlueZ MediaPlayer1 method on the phone to control
 // playback via AVRCP. method is one of: Play, Pause, Stop, Next, Previous,
 // FastForward, Rewind, Release.
+//
+// Play/Pause/Stop update the internal state immediately (optimistic update) so
+// that IsPlaying() is accurate before the next AVRCP poll cycle (~500ms).
+// lastKnownPlaying is also updated to suppress the spurious PlayStateChanged
+// signal that would otherwise fire when the poll confirms the new state.
 func (s *Source) MediaControl(method string) {
+	s.mu.Lock()
+	switch method {
+	case "Play":
+		s.state.Playing = true
+		s.lastKnownPlaying = true
+	case "Pause", "Stop":
+		s.state.Playing = false
+		s.lastKnownPlaying = false
+		s.posRefreshedAt = time.Time{}
+	}
+	s.mu.Unlock()
+
 	path := findPlayerPath()
 	if path == "" {
 		return

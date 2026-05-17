@@ -278,11 +278,13 @@ func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev 
 			} else {
 				newPlaying = true
 				avrcpCmd = "Play"
+				h.lastAudioAttrSent = time.Now()
 				ipod.Send(tr, &audio.TrackNewAudioAttributes{SampleRate: audio.NegotiatedRate()})
 			}
 		case PlayControlPlay:
 			newPlaying = true
 			avrcpCmd = "Play"
+			h.lastAudioAttrSent = time.Now()
 			ipod.Send(tr, &audio.TrackNewAudioAttributes{SampleRate: audio.NegotiatedRate()})
 		case PlayControlPause:
 			newPlaying = false
