@@ -436,14 +436,16 @@ func processFrames(frameTransport ipod.FrameReadWriter, sendIdentify bool) {
 	for {
 		select {
 		case <-positionTicker.C:
-			if avrcpSource != nil && extRemoteHandler.IsPlaying() {
-				_, posMs, _ := avrcpSource.PlaybackStatus()
-				outCmdBuf := ipod.CmdBuffer{}
-				ipod.Send(&outCmdBuf, &extremote.PlayStatusChangeNotificationPosition{
-					EventID:    0x04,
-					PositionMs: posMs,
-				})
-				sendCmds(&outCmdBuf)
+			if avrcpSource != nil {
+				_, posMs, playing := avrcpSource.PlaybackStatus()
+				if playing {
+					outCmdBuf := ipod.CmdBuffer{}
+					ipod.Send(&outCmdBuf, &extremote.PlayStatusChangeNotificationPosition{
+						EventID:    0x04,
+						PositionMs: posMs,
+					})
+					sendCmds(&outCmdBuf)
+				}
 			}
 
 		case <-notifyCh:
@@ -462,12 +464,19 @@ func processFrames(frameTransport ipod.FrameReadWriter, sendIdentify bool) {
 				})
 				sendCmds(&outCmdBuf)
 			}
-			// Drain the play-state-changed flag but don't push it — the timer
-			// is driven by position ticks (EventID=0x04 every 500ms), and
-			// spurious Paused→Playing transitions from BlueZ glitches cause
-			// malformed PlaybackStopped frames that break the audio session.
-			if avrcpSource != nil {
-				avrcpSource.PlayStateChanged() // consume flag, no push
+			// Push play state changes so the radio reflects phone-side
+			// pause/resume immediately (2-way sync).
+			if changed, playing := avrcpSource.PlayStateChanged(); changed {
+				state := extremote.PlayerStatePaused
+				if playing {
+					state = extremote.PlayerStatePlaying
+				}
+				outCmdBuf := ipod.CmdBuffer{}
+				ipod.Send(&outCmdBuf, &extremote.PlayStatusChangeNotification{
+					EventID:     0x00,
+					PlayerState: byte(state),
+				})
+				sendCmds(&outCmdBuf)
 			}
 
 		case fr := <-frameCh:

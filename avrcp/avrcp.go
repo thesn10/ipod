@@ -86,9 +86,7 @@ func (s *Source) signalPlayStateChanged() {
 }
 
 func newPlayState() PlayState {
-	// Default to playing=true and a non-zero duration so the car doesn't
-	// see a paused/empty state before the first successful AVRCP poll.
-	return PlayState{Playing: true, Duration: 300_000}
+	return PlayState{Duration: 300_000}
 }
 
 // NewSource starts a background AVRCP poller and signal watcher, returning immediately.
@@ -143,6 +141,9 @@ func (s *Source) TrackArtist() string { return s.snapshot().Artist }
 
 // TrackAlbum implements extremote.DeviceExtRemote.
 func (s *Source) TrackAlbum() string { return s.snapshot().Album }
+
+// IsPlaying implements extremote.DeviceExtRemote and dispremote.DeviceDispRemote.
+func (s *Source) IsPlaying() bool { return s.snapshot().Playing }
 
 // TrackPositionMs implements dispremote.DeviceDispRemote.
 func (s *Source) TrackPositionMs() uint32 {

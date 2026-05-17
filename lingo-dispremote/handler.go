@@ -12,6 +12,8 @@ type DeviceDispRemote interface {
 	TrackPositionMs() uint32
 	// TrackLengthMs returns the track/stream duration in milliseconds.
 	TrackLengthMs() uint32
+	// IsPlaying returns the current playing state from the phone via AVRCP.
+	IsPlaying() bool
 	// TrackTitle returns the current track title.
 	TrackTitle() string
 	// TrackArtist returns the current track artist.
@@ -72,9 +74,11 @@ func HandleDispRemote(req *ipod.Command, tr ipod.CommandWriter, dev DeviceDispRe
 				ChapterIndex: 0,
 			}
 		case InfoTypePlayStatus:
-			t.InfoData = &InfoPlayStatus{
-				PlayStatus: PlayStatusPlaying,
+			status := PlayStatusPlaying
+			if dev != nil && !dev.IsPlaying() {
+				status = PlayStatusPaused
 			}
+			t.InfoData = &InfoPlayStatus{PlayStatus: status}
 		case InfoTypeVolume:
 			t.InfoData = &InfoVolume{MuteState: 0x00, UIVolumeLevel: 255}
 		case InfoTypePower:
@@ -135,8 +139,12 @@ func HandleDispRemote(req *ipod.Command, tr ipod.CommandWriter, dev DeviceDispRe
 				totalMs = pos + 300_000
 			}
 		}
+		state := PlayStatusPlaying
+		if dev != nil && !dev.IsPlaying() {
+			state = PlayStatusPaused
+		}
 		ipod.Respond(req, tr, &RetPlayStatus{
-			PlayState:   byte(PlayStatusPlaying),
+			PlayState:   byte(state),
 			TrackIndex:  0,
 			TrackLength: totalMs,
 			TrackPos:    pos,
