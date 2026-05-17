@@ -182,6 +182,14 @@ func (s *Source) MediaControl(method string) {
 	}
 	s.mu.Unlock()
 
+	switch method {
+	case "Play", "Pause", "Stop":
+		// Signal immediately so the car gets a play-state notification without
+		// waiting for the next AVRCP poll cycle (~500ms). The lastKnownPlaying
+		// suppression in refresh() prevents a duplicate when the poll confirms.
+		s.signalPlayStateChanged()
+	}
+
 	path := findPlayerPath()
 	if path == "" {
 		return

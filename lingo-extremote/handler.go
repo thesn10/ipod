@@ -254,33 +254,26 @@ func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev 
 			ipod.Send(tr, &audio.NewiPodTrackInfo{SampleRate: audio.NegotiatedRate()})
 		}
 	case *PlayControl:
-		// Read current AVRCP state before issuing any command so Toggle can
-		// determine the correct direction. newPlaying tracks the intended state
-		// for the immediate response (AVRCP won't reflect the change instantly).
+		// currentlyPlaying is read before issuing any command so Toggle can
+		// determine the correct direction.
 		currentlyPlaying := dev != nil && dev.IsPlaying()
-		newPlaying := currentlyPlaying
 		var avrcpCmd string
 		switch msg.Cmd {
 		case PlayControlToggle:
 			if currentlyPlaying {
-				newPlaying = false
 				avrcpCmd = "Pause"
 			} else {
-				newPlaying = true
 				avrcpCmd = "Play"
 				h.lastAudioAttrSent = time.Now()
 				ipod.Send(tr, &audio.NewiPodTrackInfo{SampleRate: audio.NegotiatedRate()})
 			}
 		case PlayControlPlay:
-			newPlaying = true
 			avrcpCmd = "Play"
 			h.lastAudioAttrSent = time.Now()
 			ipod.Send(tr, &audio.NewiPodTrackInfo{SampleRate: audio.NegotiatedRate()})
 		case PlayControlPause:
-			newPlaying = false
 			avrcpCmd = "Pause"
 		case PlayControlStop:
-			newPlaying = false
 			avrcpCmd = "Pause"
 		case PlayControlNextTrack, PlayControlNext, PlayControlNextChapter:
 			avrcpCmd = "Next"
@@ -294,18 +287,14 @@ func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev 
 			avrcpCmd = "Rewind"
 		case PlayControlEndFFRew:
 			// FastForward/Rewind run until another method is called (BlueZ docs).
-			// Release() is for Hold() keys only, not for ending seek — use Play.
-			newPlaying = true
 			avrcpCmd = "Play"
 		}
 		if avrcpCmd != "" && dev != nil {
 			dev.MediaControl(avrcpCmd)
 		}
 		ipod.Respond(req, tr, ackSuccess(req))
-		// Confirm the intended state immediately. AVRCP state lags by one poll
-		// cycle after MediaControl, so we use newPlaying (our intent) rather
-		// than re-reading dev.IsPlaying() here.
-		h.SendPlayStatus(tr, newPlaying)
+		// Play state notifications are sent via MediaControl → signalPlayStateChanged
+		// → notifyCh → main.go, which covers ExtRemote and DispRemote uniformly.
 	case *GetTrackArtworkTimes:
 		ipod.Respond(req, tr, &RetTrackArtworkTimes{})
 	case *GetShuffle:
