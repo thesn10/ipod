@@ -328,7 +328,10 @@ func (s *RetDevAuthenticationInfo) MarshalBinary() ([]byte, error) {
 type DevAuthInfoStatus uint8
 
 const (
-	DevAuthInfoStatusSupported DevAuthInfoStatus = 0x00
+	DevAuthInfoStatusSupported              DevAuthInfoStatus = 0x00
+	DevAuthInfoStatusUnsupported            DevAuthInfoStatus = 0x08
+	DevAuthInfoStatusCertInvalid            DevAuthInfoStatus = 0x0A
+	DevAuthInfoStatusCertPermissionsInvalid DevAuthInfoStatus = 0x0B
 )
 
 type AckDevAuthenticationInfo struct {

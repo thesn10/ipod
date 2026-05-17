@@ -182,7 +182,7 @@ func HandleGeneral(req *ipod.Command, tr ipod.CommandWriter, dev DeviceGeneral) 
 			if msg.CertCurrentSection < msg.CertMaxSection {
 				// More sections coming, just acknowledge
 				log.WithField("section", msg.CertCurrentSection).Info("[AUTH] Acknowledging intermediate certificate section")
-				ipod.Respond(req, tr, &AckDevAuthenticationInfo{Status: DevAuthInfoStatusSupported})
+				ipod.Respond(req, tr, ackSuccess(req))
 			} else {
 				// All certificate sections received
 				log.WithField("total_cert_size", devCertBuf.Len()).Info("[AUTH] All certificate sections received, acknowledging final section")
