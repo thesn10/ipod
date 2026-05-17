@@ -293,7 +293,10 @@ func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev 
 		case PlayControlStartRew:
 			avrcpCmd = "Rewind"
 		case PlayControlEndFFRew:
-			avrcpCmd = "Release"
+			// FastForward/Rewind run until another method is called (BlueZ docs).
+			// Release() is for Hold() keys only, not for ending seek — use Play.
+			newPlaying = true
+			avrcpCmd = "Play"
 		}
 		if avrcpCmd != "" && dev != nil {
 			dev.MediaControl(avrcpCmd)
