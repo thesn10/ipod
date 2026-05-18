@@ -49,13 +49,13 @@ func (h *ExtRemoteHandler) SendPlayStatus(tr ipod.CommandWriter, playing bool) {
 
 // SendTrackIndex sends a track-index PlayStatusChangeNotification (type 0x01)
 // if the radio subscribed to track index changes (bit 2).
-func (h *ExtRemoteHandler) SendTrackIndex(tr ipod.CommandWriter, index uint32) {
+func (h *ExtRemoteHandler) SendTrackIndex(tr ipod.CommandWriter) {
 	if !h.isEnabled(NotifyTrackIndex) {
 		return
 	}
 	ipod.Send(tr, &PlayStatusChangeNotificationTrackIndex{
 		EventID:    0x01,
-		TrackIndex: index,
+		TrackIndex: h.trackIndex,
 	})
 }
 

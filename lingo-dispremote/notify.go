@@ -75,12 +75,12 @@ func (h *DispRemoteHandler) SendPlayStatus(tr ipod.CommandWriter, playing bool) 
 }
 
 // SendTrackIndex sends a track-index RemoteEventNotification if the radio subscribed to it.
-func (h *DispRemoteHandler) SendTrackIndex(tr ipod.CommandWriter, index uint32) {
+func (h *DispRemoteHandler) SendTrackIndex(tr ipod.CommandWriter) {
 	if !h.isEnabled(EventMaskTrackIndex) {
 		return
 	}
 	data := make([]byte, 4)
-	binary.BigEndian.PutUint32(data, index)
+	binary.BigEndian.PutUint32(data, h.trackIndex)
 	ipod.Send(tr, &RemoteEventNotification{
 		EventNum:  EventNumTrackIndex,
 		EventData: data,

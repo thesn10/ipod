@@ -53,6 +53,10 @@ type ExtRemoteHandler struct {
 	// audioAttrDebounce. Enable with --audio-attr-debounce for head units that
 	// re-send PlayCurrentSelection when the audio stream is reopened.
 	debounceAudioAttr bool
+	// trackIndex is a monotonically increasing counter sent to the car on each
+	// track change. Using an incrementing index forces the car to re-query
+	// title/artist/album metadata instead of using its cached copy.
+	trackIndex uint32
 	extNotifyState
 }
 
@@ -67,25 +71,13 @@ func NewExtRemoteHandler(debounce bool) *ExtRemoteHandler {
 // least once this session.
 func (h *ExtRemoteHandler) AudioEstablished() bool { return h.audioEstablished }
 
-// OnTrackChanged resets the audio-attributes debounce so that the
-// PlayCurrentSelection which follows a car-side TrackIndexChanged notification
-// always sends TrackNewAudioAttributes to reopen the USB audio stream.
+// OnTrackChanged increments the track index and resets the audio-attributes
+// debounce so that the PlayCurrentSelection which follows a car-side
+// TrackIndexChanged notification always sends NewiPodTrackInfo to reopen
+// the USB audio stream.
 func (h *ExtRemoteHandler) OnTrackChanged() {
+	h.trackIndex++
 	h.lastAudioAttrSent = time.Time{}
-}
-
-// SendAudioOpen sends NewiPodTrackInfo to (re)open the USB audio stream.
-// Used when the phone resumes playback without a PlayControl from the car
-// (e.g. phone-side play, auto-advance after track end). Skipped if
-// NewiPodTrackInfo was already sent within 2s (covers radio-side PlayControl
-// which sends it directly in the handler).
-func (h *ExtRemoteHandler) SendAudioOpen(tr ipod.CommandWriter) {
-	if time.Since(h.lastAudioAttrSent) < 2*time.Second {
-		return
-	}
-	h.lastAudioAttrSent = time.Now()
-	h.audioEstablished = true
-	ipod.Send(tr, &audio.NewiPodTrackInfo{SampleRate: audio.NegotiatedRate()})
 }
 
 // HandleExtRemote is kept for callers that don't need session state.
@@ -214,7 +206,7 @@ func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev 
 		})
 	case *GetCurrentPlayingTrackIndex:
 		ipod.Respond(req, tr, &ReturnCurrentPlayingTrackIndex{
-			TrackIndex: 0,
+			TrackIndex: int32(h.trackIndex),
 		})
 	case *GetIndexedPlayingTrackTitle:
 		title := "Bluetooth"
@@ -272,24 +264,23 @@ func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev 
 		// determine the correct direction.
 		currentlyPlaying := dev != nil && dev.IsPlaying()
 		var avrcpCmd string
-		sendAudio := false
 		switch msg.Cmd {
 		case PlayControlToggle:
 			if currentlyPlaying {
 				avrcpCmd = "Pause"
 			} else {
 				avrcpCmd = "Play"
-				sendAudio = true
 			}
 		case PlayControlPlay:
 			avrcpCmd = "Play"
-			sendAudio = true
 		case PlayControlPause:
 			avrcpCmd = "Pause"
 		case PlayControlStop:
 			avrcpCmd = "Pause"
 		case PlayControlNextTrack, PlayControlNext, PlayControlNextChapter:
 			avrcpCmd = "Next"
+			// Reset so the PlayCurrentSelection that follows a TrackIndex
+			// notification always sends NewiPodTrackInfo to (re)open the audio stream.
 			h.lastAudioAttrSent = time.Time{}
 		case PlayControlPrevTrack, PlayControlPrev, PlayControlPrevChapter:
 			avrcpCmd = "Previous"
@@ -306,12 +297,11 @@ func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev 
 			dev.MediaControl(avrcpCmd)
 		}
 		ipod.Respond(req, tr, ackSuccess(req))
-		if sendAudio {
-			h.lastAudioAttrSent = time.Now()
-			ipod.Send(tr, &audio.NewiPodTrackInfo{SampleRate: audio.NegotiatedRate()})
-		}
 		// Play state notifications are sent via MediaControl → signalPlayStateChanged
 		// → notifyCh → main.go, which covers ExtRemote and DispRemote uniformly.
+		// NewiPodTrackInfo is NOT sent here — per spec it is only sent from the iPod
+		// before the first track and when sample rate changes; sending it mid-stream
+		// triggers a full audio-pipeline reinit on the car which kills the stream.
 	case *GetTrackArtworkTimes:
 		ipod.Respond(req, tr, &RetTrackArtworkTimes{})
 	case *GetShuffle:

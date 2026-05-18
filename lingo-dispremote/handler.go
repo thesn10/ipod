@@ -26,7 +26,13 @@ type DeviceDispRemote interface {
 // A new instance must be created for each USB session so that state resets
 // correctly on reconnect.
 type DispRemoteHandler struct {
+	trackIndex uint32
 	dispNotifyState
+}
+
+// OnTrackChanged increments the track index so the car re-queries metadata.
+func (h *DispRemoteHandler) OnTrackChanged() {
+	h.trackIndex++
 }
 
 func NewDispRemoteHandler() *DispRemoteHandler {
@@ -78,7 +84,7 @@ func (h *DispRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev
 			}
 			t.InfoData = &InfoTrackPositionMs{TrackPositionMs: pos}
 		case InfoTypeTrackIndex:
-			t.InfoData = &InfoTrackIndex{TrackIndex: 0}
+			t.InfoData = &InfoTrackIndex{TrackIndex: h.trackIndex}
 		case InfoTypeChapterIndex:
 			t.InfoData = &InfoChapterIndex{
 				TrackIndex:   0,

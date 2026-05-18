@@ -466,21 +466,16 @@ func processFrames(frameTransport ipod.FrameReadWriter, sendIdentify bool, debou
 			// one was sent recently for the previous track.
 			if avrcpSource.TrackChanged() {
 				extRemoteHandler.OnTrackChanged()
+				dispRemoteHandler.OnTrackChanged()
 				outCmdBuf := ipod.CmdBuffer{}
-				extRemoteHandler.SendTrackIndex(&outCmdBuf, 0)
-				dispRemoteHandler.SendTrackIndex(&outCmdBuf, 0)
+				extRemoteHandler.SendTrackIndex(&outCmdBuf)
+				dispRemoteHandler.SendTrackIndex(&outCmdBuf)
 				sendCmds(&outCmdBuf)
 			}
 			// Push play state changes so the radio reflects phone-side
 			// pause/resume immediately (2-way sync).
 			if changed, playing := avrcpSource.PlayStateChanged(); changed {
 				outCmdBuf := ipod.CmdBuffer{}
-				if playing {
-					// Re-open the USB audio stream on phone-side resume (no
-					// PlayControl was received, so the handler didn't send
-					// NewiPodTrackInfo). Skipped if one was sent recently.
-					extRemoteHandler.SendAudioOpen(&outCmdBuf)
-				}
 				extRemoteHandler.SendPlayStatus(&outCmdBuf, playing)
 				dispRemoteHandler.SendPlayStatus(&outCmdBuf, playing)
 				sendCmds(&outCmdBuf)
