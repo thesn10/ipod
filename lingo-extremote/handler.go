@@ -74,6 +74,20 @@ func (h *ExtRemoteHandler) OnTrackChanged() {
 	h.lastAudioAttrSent = time.Time{}
 }
 
+// SendAudioOpen sends NewiPodTrackInfo to (re)open the USB audio stream.
+// Used when the phone resumes playback without a PlayControl from the car
+// (e.g. phone-side play, auto-advance after track end). Skipped if
+// NewiPodTrackInfo was already sent within 2s (covers radio-side PlayControl
+// which sends it directly in the handler).
+func (h *ExtRemoteHandler) SendAudioOpen(tr ipod.CommandWriter) {
+	if time.Since(h.lastAudioAttrSent) < 2*time.Second {
+		return
+	}
+	h.lastAudioAttrSent = time.Now()
+	h.audioEstablished = true
+	ipod.Send(tr, &audio.NewiPodTrackInfo{SampleRate: audio.NegotiatedRate()})
+}
+
 // HandleExtRemote is kept for callers that don't need session state.
 // Prefer ExtRemoteHandler.Handle for new code.
 func HandleExtRemote(req *ipod.Command, tr ipod.CommandWriter, dev DeviceExtRemote) error {
@@ -258,19 +272,18 @@ func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev 
 		// determine the correct direction.
 		currentlyPlaying := dev != nil && dev.IsPlaying()
 		var avrcpCmd string
+		sendAudio := false
 		switch msg.Cmd {
 		case PlayControlToggle:
 			if currentlyPlaying {
 				avrcpCmd = "Pause"
 			} else {
 				avrcpCmd = "Play"
-				h.lastAudioAttrSent = time.Now()
-				ipod.Send(tr, &audio.NewiPodTrackInfo{SampleRate: audio.NegotiatedRate()})
+				sendAudio = true
 			}
 		case PlayControlPlay:
 			avrcpCmd = "Play"
-			h.lastAudioAttrSent = time.Now()
-			ipod.Send(tr, &audio.NewiPodTrackInfo{SampleRate: audio.NegotiatedRate()})
+			sendAudio = true
 		case PlayControlPause:
 			avrcpCmd = "Pause"
 		case PlayControlStop:
@@ -293,6 +306,10 @@ func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev 
 			dev.MediaControl(avrcpCmd)
 		}
 		ipod.Respond(req, tr, ackSuccess(req))
+		if sendAudio {
+			h.lastAudioAttrSent = time.Now()
+			ipod.Send(tr, &audio.NewiPodTrackInfo{SampleRate: audio.NegotiatedRate()})
+		}
 		// Play state notifications are sent via MediaControl → signalPlayStateChanged
 		// → notifyCh → main.go, which covers ExtRemote and DispRemote uniformly.
 	case *GetTrackArtworkTimes:

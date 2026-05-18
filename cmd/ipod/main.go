@@ -475,6 +475,12 @@ func processFrames(frameTransport ipod.FrameReadWriter, sendIdentify bool, debou
 			// pause/resume immediately (2-way sync).
 			if changed, playing := avrcpSource.PlayStateChanged(); changed {
 				outCmdBuf := ipod.CmdBuffer{}
+				if playing {
+					// Re-open the USB audio stream on phone-side resume (no
+					// PlayControl was received, so the handler didn't send
+					// NewiPodTrackInfo). Skipped if one was sent recently.
+					extRemoteHandler.SendAudioOpen(&outCmdBuf)
+				}
 				extRemoteHandler.SendPlayStatus(&outCmdBuf, playing)
 				dispRemoteHandler.SendPlayStatus(&outCmdBuf, playing)
 				sendCmds(&outCmdBuf)

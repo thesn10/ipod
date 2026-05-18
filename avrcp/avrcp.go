@@ -36,9 +36,14 @@ type Source struct {
 	lastTrackLog     string        // dedup track log lines
 	trackChanged     uint32        // atomic: 1 when new track data arrived, cleared by TrackChanged()
 	playStateChanged uint32        // atomic: 1 when Playing transitions, cleared by PlayStateChanged()
-	lastKnownTitle   string        // detect title changes to avoid spurious notifications
-	lastKnownPlaying bool          // detect play/pause transitions
-	notifyCh         chan struct{} // signalled (non-blocking) on track change or play state change
+	lastKnownTitle  string    // detect title changes to avoid spurious notifications
+	lastKnownPlaying bool     // detect play/pause transitions
+	// optimisticUntil suppresses BlueZ poll results that contradict a recent
+	// optimistic Play/Pause update. BlueZ lags behind the busctl command by
+	// up to ~500ms; without this guard the poll loop emits a spurious bounce
+	// notification (e.g. Paused→Playing→Paused) which confuses the car radio.
+	optimisticUntil time.Time
+	notifyCh        chan struct{} // signalled (non-blocking) on track change or play state change
 }
 
 // Notify returns a channel that receives a value whenever track metadata
@@ -175,10 +180,12 @@ func (s *Source) MediaControl(method string) {
 	case "Play":
 		s.state.Playing = true
 		s.lastKnownPlaying = true
+		s.optimisticUntil = time.Now().Add(1500 * time.Millisecond)
 	case "Pause", "Stop":
 		s.state.Playing = false
 		s.lastKnownPlaying = false
 		s.posRefreshedAt = time.Time{}
+		s.optimisticUntil = time.Now().Add(1500 * time.Millisecond)
 	}
 	s.mu.Unlock()
 
@@ -595,8 +602,12 @@ func (s *Source) refresh() {
 		if status, ok := getString(props, "Status"); ok {
 			newPlaying = status == "playing"
 			if newPlaying != s.lastKnownPlaying {
-				playingChanged = true
-				s.lastKnownPlaying = newPlaying
+				if time.Now().Before(s.optimisticUntil) {
+					newPlaying = s.lastKnownPlaying // suppress bounce within guard window
+				} else {
+					playingChanged = true
+					s.lastKnownPlaying = newPlaying
+				}
 			}
 			if !newPlaying {
 				s.posRefreshedAt = time.Time{}
@@ -616,15 +627,21 @@ func (s *Source) refresh() {
 	s.mu.Lock()
 	prevPlaying := s.lastKnownPlaying
 	s.state = next
-	s.lastKnownPlaying = next.Playing
-	if gotPos && next.Playing {
+	if next.Playing != prevPlaying && time.Now().Before(s.optimisticUntil) {
+		s.state.Playing = prevPlaying // suppress bounce within guard window
+	}
+	playingChanged := s.state.Playing != prevPlaying
+	if playingChanged {
+		s.lastKnownPlaying = s.state.Playing
+	}
+	if gotPos && s.state.Playing {
 		s.posRefreshedAt = time.Now()
-	} else if !next.Playing {
+	} else if !s.state.Playing {
 		// Reset baseline on pause so we don't extrapolate stale position on resume.
 		s.posRefreshedAt = time.Time{}
 	}
 	s.mu.Unlock()
-	if next.Playing != prevPlaying {
+	if playingChanged {
 		s.signalPlayStateChanged()
 	}
 }
