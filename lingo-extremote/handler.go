@@ -1,10 +1,6 @@
 package extremote
 
 import (
-	"time"
-
-	audio "github.com/oandrew/ipod/lingo-audio"
-
 	"github.com/oandrew/ipod"
 )
 
@@ -27,32 +23,10 @@ func ackSuccess(req *ipod.Command) *ACK {
 	return &ACK{Status: ACKStatusSuccess, CmdID: req.ID.CmdID()}
 }
 
-// audioAttrDebounce is the minimum interval between consecutive
-// NewiPodTrackInfo sends. The car's stream-reopen cycle takes ~500ms
-// and causes it to send another PlayCurrentSelection; without debouncing this
-// creates a tight feedback loop.
-const audioAttrDebounce = 5 * time.Second
-
 // ExtRemoteHandler manages session-scoped state for lingo 0x04 (Extended Remote).
 // A new instance must be created for each USB session so that state resets
 // correctly on reconnect.
 type ExtRemoteHandler struct {
-	// audioEstablished is true once NewiPodTrackInfo has been sent at
-	// least once this session. Starts true so the IDPS send (from the audio
-	// lingo) counts — suppressing spurious TrackIndex pushes from notifyCh
-	// during start-up before the first PlayCurrentSelection.
-	audioEstablished bool
-	// lastAudioAttrSent is the time we last sent NewiPodTrackInfo.
-	// Per spec, NewiPodTrackInfo must be sent on every PlayCurrentSelection
-	// to (re)open the USB audio stream. However the car's stream-reopen cycle
-	// itself triggers another PlayCurrentSelection, so we debounce resends
-	// within audioAttrDebounce to break the feedback loop.
-	// Zero value means "never sent" — PlayCurrentSelection will always fire it.
-	lastAudioAttrSent time.Time
-	// debounceAudioAttr suppresses duplicate NewiPodTrackInfo sends within
-	// audioAttrDebounce. Enable with --audio-attr-debounce for head units that
-	// re-send PlayCurrentSelection when the audio stream is reopened.
-	debounceAudioAttr bool
 	// trackIndex is a monotonically increasing counter sent to the car on each
 	// track change. Using an incrementing index forces the car to re-query
 	// title/artist/album metadata instead of using its cached copy.
@@ -60,30 +34,19 @@ type ExtRemoteHandler struct {
 	extNotifyState
 }
 
-// NewExtRemoteHandler returns a handler with audioEstablished=true.
-// If debounce is true, duplicate NewiPodTrackInfo sends within audioAttrDebounce
-// are suppressed (for head units that loop on PlayCurrentSelection).
-func NewExtRemoteHandler(debounce bool) *ExtRemoteHandler {
-	return &ExtRemoteHandler{audioEstablished: true, debounceAudioAttr: debounce}
+func NewExtRemoteHandler() *ExtRemoteHandler {
+	return &ExtRemoteHandler{}
 }
 
-// AudioEstablished reports whether the USB audio stream has been opened at
-// least once this session.
-func (h *ExtRemoteHandler) AudioEstablished() bool { return h.audioEstablished }
-
-// OnTrackChanged increments the track index and resets the audio-attributes
-// debounce so that the PlayCurrentSelection which follows a car-side
-// TrackIndexChanged notification always sends NewiPodTrackInfo to reopen
-// the USB audio stream.
+// OnTrackChanged increments the track index so the car re-queries metadata.
 func (h *ExtRemoteHandler) OnTrackChanged() {
 	h.trackIndex++
-	h.lastAudioAttrSent = time.Time{}
 }
 
 // HandleExtRemote is kept for callers that don't need session state.
 // Prefer ExtRemoteHandler.Handle for new code.
 func HandleExtRemote(req *ipod.Command, tr ipod.CommandWriter, dev DeviceExtRemote) error {
-	return (&ExtRemoteHandler{audioEstablished: true, debounceAudioAttr: false}).Handle(req, tr, dev)
+	return (&ExtRemoteHandler{}).Handle(req, tr, dev)
 }
 
 func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev DeviceExtRemote) error {
@@ -254,11 +217,11 @@ func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev 
 			dev.MediaControl("Play")
 		}
 		ipod.Respond(req, tr, ackSuccess(req))
-		if !h.debounceAudioAttr || time.Since(h.lastAudioAttrSent) >= audioAttrDebounce {
-			h.lastAudioAttrSent = time.Now()
-			h.audioEstablished = true
-			ipod.Send(tr, &audio.NewiPodTrackInfo{SampleRate: audio.NegotiatedRate()})
-		}
+		// NewiPodTrackInfo is NOT sent here. Per spec it is only sent during the
+		// audio-lingo handshake (RetAccSampleRateCaps) when sample rate is negotiated.
+		// Sending it on every PlayCurrentSelection (i.e. every radio Play press)
+		// triggers a full audio-pipeline reinit on the car, which permanently kills
+		// the stream on the radio.
 	case *PlayControl:
 		// currentlyPlaying is read before issuing any command so Toggle can
 		// determine the correct direction.
@@ -279,12 +242,8 @@ func (h *ExtRemoteHandler) Handle(req *ipod.Command, tr ipod.CommandWriter, dev 
 			avrcpCmd = "Pause"
 		case PlayControlNextTrack, PlayControlNext, PlayControlNextChapter:
 			avrcpCmd = "Next"
-			// Reset so the PlayCurrentSelection that follows a TrackIndex
-			// notification always sends NewiPodTrackInfo to (re)open the audio stream.
-			h.lastAudioAttrSent = time.Time{}
 		case PlayControlPrevTrack, PlayControlPrev, PlayControlPrevChapter:
 			avrcpCmd = "Previous"
-			h.lastAudioAttrSent = time.Time{}
 		case PlayControlStartFF:
 			avrcpCmd = "FastForward"
 		case PlayControlStartRew:

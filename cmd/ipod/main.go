@@ -152,10 +152,6 @@ func main() {
 					Name:  "request-identify",
 					Usage: "Send RequestIdentify (Cmd 0x00) on startup to prompt iAP1 accessories",
 				},
-				cli.BoolFlag{
-					Name:  "audio-attr-debounce",
-					Usage: "Suppress duplicate NewiPodTrackInfo within 5s of PlayCurrentSelection (for head units that loop on stream reopen)",
-				},
 			},
 			Action: func(c *cli.Context) error {
 				initAVRCP()
@@ -187,7 +183,7 @@ func main() {
 
 				reportR, reportW := hid.NewReportReader(rw), hid.NewReportWriter(rw)
 				frameTransport := hid.NewTransport(reportR, reportW, hidReportDefs)
-				processFrames(frameTransport, c.Bool("request-identify"), c.Bool("audio-attr-debounce"))
+				processFrames(frameTransport, c.Bool("request-identify"))
 				return nil
 			},
 		},
@@ -213,7 +209,7 @@ func main() {
 				tdr := trace.NewTraceDirReader(tr, trace.DirIn)
 				reportR, reportW := hid.NewReportReader(tdr), hid.NewReportWriter(ioutil.Discard)
 				frameTransport := hid.NewTransport(reportR, reportW, hidReportDefs)
-				processFrames(frameTransport, false, false)
+				processFrames(frameTransport, false)
 				return nil
 			},
 		},
@@ -293,7 +289,7 @@ func main() {
 
 				frameTransport := hid.NewTransport(reportR, dummyW, hidReportDefs)
 
-				go processFrames(frameTransport, false, false)
+				go processFrames(frameTransport, false)
 
 				for {
 					report, err := traceR.ReadReport()
@@ -359,9 +355,9 @@ func logCmd(cmd *ipod.Command, err error, msg string) {
 
 }
 
-func processFrames(frameTransport ipod.FrameReadWriter, sendIdentify bool, debounceAudioAttr bool) {
+func processFrames(frameTransport ipod.FrameReadWriter, sendIdentify bool) {
 	// Reset session-scoped state so reconnections start fresh.
-	extRemoteHandler = extremote.NewExtRemoteHandler(debounceAudioAttr)
+	extRemoteHandler = extremote.NewExtRemoteHandler()
 	dispRemoteHandler = dispremote.NewDispRemoteHandler()
 
 	serde := ipod.CommandSerde{}
@@ -615,7 +611,7 @@ var avrcpSource *avrcp.Source
 
 // extRemoteHandler and dispRemoteHandler are reset for every new USB session in
 // processFrames so that state starts fresh on each reconnect.
-var extRemoteHandler = extremote.NewExtRemoteHandler(false)
+var extRemoteHandler = extremote.NewExtRemoteHandler()
 var dispRemoteHandler = dispremote.NewDispRemoteHandler()
 
 func initAVRCP() {
